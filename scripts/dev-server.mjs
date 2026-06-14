@@ -33,6 +33,11 @@ function resolvePath(urlPath) {
 const server = createServer((req, res) => {
   const requestUrl = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
 
+  if (requestUrl.pathname === "/runtime-config.js") {
+    runtimeConfigRequest(res);
+    return;
+  }
+
   if (requestUrl.pathname === "/proxy") {
     proxyRequest(req, res, requestUrl);
     return;
@@ -58,6 +63,30 @@ const server = createServer((req, res) => {
   });
   createReadStream(filePath).pipe(res);
 });
+
+function envValue(name) {
+  const value = process.env[name]?.trim();
+  return value || undefined;
+}
+
+function runtimeConfigRequest(res) {
+  const config = {};
+  const apiOrigin = envValue("INVIDIOUS_API_ORIGIN");
+  const region = envValue("INVIDIOUS_REGION");
+  const sponsorBlockApiOrigin = envValue("SPONSORBLOCK_API_ORIGIN");
+
+  if (apiOrigin) config.apiOrigin = apiOrigin;
+  if (region) config.region = region;
+  if (sponsorBlockApiOrigin) {
+    config.sponsorBlock = { apiOrigin: sponsorBlockApiOrigin };
+  }
+
+  res.writeHead(200, {
+    "Content-Type": "text/javascript; charset=utf-8",
+    "Cache-Control": "no-store"
+  });
+  res.end(`window.__INVIDIOUS_FE_CONFIG__ = ${JSON.stringify(config)};\n`);
+}
 
 async function proxyRequest(req, res, requestUrl) {
   const target = requestUrl.searchParams.get("url");

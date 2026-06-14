@@ -16,6 +16,34 @@ Open `http://localhost:5173`.
 The frontend backend URL is configurable in the Settings page. The default is
 `http://localhost:3000`.
 
+## Run With Docker Compose
+
+Build and start the frontend container:
+
+```sh
+docker compose up -d --build
+```
+
+By default the app is published on `http://localhost:5173` and expects the
+Invidious backend at `http://localhost:3000`. On a server, set the public backend
+origin that browsers can reach:
+
+```sh
+INVIDIOUS_API_ORIGIN=https://invidious.example.com docker compose up -d --build
+```
+
+Supported compose environment variables:
+
+- `INVIDIOUS_FE_PORT` - host port for the frontend, defaults to `5173`.
+- `PORT` - internal container port, defaults to `5173`.
+- `INVIDIOUS_API_ORIGIN` - default Invidious backend origin shown in Settings.
+- `INVIDIOUS_REGION` - optional default region code.
+- `SPONSORBLOCK_API_ORIGIN` - SponsorBlock API origin, defaults to
+  `https://sponsor.ajay.app`.
+
+Settings are still saved in each browser's localStorage. Resetting settings in
+the app returns to the defaults provided by the container environment.
+
 ## Project Layout
 
 - `src/api.js` - Invidious API client and URL helpers.

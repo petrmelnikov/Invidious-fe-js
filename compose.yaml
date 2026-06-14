@@ -1,0 +1,20 @@
+services:
+  invidious-fe:
+    build:
+      context: .
+    image: invidious-fe:latest
+    container_name: invidious-fe
+    restart: unless-stopped
+    environment:
+      PORT: ${PORT:-5173}
+      INVIDIOUS_API_ORIGIN: ${INVIDIOUS_API_ORIGIN:-http://localhost:3000}
+      INVIDIOUS_REGION: ${INVIDIOUS_REGION:-}
+      SPONSORBLOCK_API_ORIGIN: ${SPONSORBLOCK_API_ORIGIN:-https://sponsor.ajay.app}
+    ports:
+      - "${INVIDIOUS_FE_PORT:-5173}:${PORT:-5173}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:$${PORT:-5173}/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

@@ -1,6 +1,6 @@
 const CONFIG_KEY = "invidious-fe:config";
 
-const defaults = {
+const baseDefaults = {
   apiOrigin: "http://localhost:3000",
   region: "",
   theme: "system",
@@ -24,6 +24,30 @@ const defaults = {
     }
   }
 };
+
+const runtimeDefaults =
+  typeof globalThis !== "undefined" &&
+  globalThis.__INVIDIOUS_FE_CONFIG__ &&
+  typeof globalThis.__INVIDIOUS_FE_CONFIG__ === "object"
+    ? globalThis.__INVIDIOUS_FE_CONFIG__
+    : {};
+
+const defaults = mergeDefaultConfig(runtimeDefaults);
+
+function mergeDefaultConfig(saved = {}) {
+  return {
+    ...baseDefaults,
+    ...saved,
+    sponsorBlock: {
+      ...baseDefaults.sponsorBlock,
+      ...(saved.sponsorBlock || {}),
+      categories: {
+        ...baseDefaults.sponsorBlock.categories,
+        ...(saved.sponsorBlock?.categories || {})
+      }
+    }
+  };
+}
 
 function mergeSponsorBlock(saved = {}) {
   return {

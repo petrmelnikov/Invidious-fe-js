@@ -17,9 +17,9 @@ export function renderStaticPage(_ctx, page) {
 
   setTitle("Privacy");
   view().innerHTML = `
-    ${pageHeader("Privacy", "The frontend stores only local preferences.")}
+    ${pageHeader("Privacy", "The frontend stores only local data in your browser.")}
     <section class="section text-section">
-      <p>Searches, video requests, comments, and media requests are sent to the configured Invidious backend. Preferences such as backend URL, theme, region, and quality are saved in localStorage on this device.</p>
+      <p>Searches, video requests, comments, and media requests are sent to the configured Invidious backend. Preferences such as backend URL, theme, region, and quality are saved in localStorage on this device. Local account names and watch progress are also stored only in this browser and are never sent to the backend.</p>
     </section>
   `;
 }

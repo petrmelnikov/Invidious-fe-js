@@ -1,8 +1,9 @@
+import { clearVideoProgress, getCurrentAccount, getVideoProgress, saveVideoProgress } from "../account.js";
 import { api, assetUrl } from "../api.js";
 import { errorState, list, loading } from "../components.js";
 import { getConfig, saveConfig } from "../config.js";
 import { installSponsorBlock } from "../sponsorblock.js";
-import { compactNumber, escapeHtml, fullNumber, pickThumbnail, relativeTime, setTitle } from "../utils.js";
+import { compactNumber, escapeHtml, fullNumber, pickThumbnail, relativeTime, secondsToDuration, setTitle } from "../utils.js";
 
 const view = () => document.getElementById("view");
 const DASH_JS_URL = "https://cdn.jsdelivr.net/npm/dashjs@4.7.4/dist/dash.all.min.js";
@@ -109,6 +110,7 @@ function watchMarkup(video, videoId) {
         ${playerAvailable ? playerEnhancements() : ""}
 
         ${playerAvailable ? playbackControls(video, streams, selected, dashAvailable) : ""}
+    <p class="player-note" id="account-progress-note"></p>
         <p class="player-note" id="player-note"></p>
         <p class="player-note" id="sponsorblock-note"></p>
 
@@ -237,15 +239,25 @@ function installWatchInteractions(video) {
   const selector = document.getElementById("stream-select");
   const speedControl = document.getElementById("speed-select");
   const initialPlaybackRate = normalizePlaybackRate(speedControl?.value || getConfig().playbackSpeed);
+  const savedProgress = getVideoProgress(video.videoId);
+  const resumeTime = normalizeResumeTime(savedProgress?.currentTime);
 
   const selectedOption = selector?.selectedOptions[0];
+  const usingDash = Boolean(selectedOption?.dataset.mode?.startsWith("dash"));
 
   if (player) {
     setPlayerPlaybackRate(player, initialPlaybackRate, speedControl);
+    installAccountProgress({
+      player,
+      video,
+      noteElement: document.getElementById("account-progress-note"),
+      initialTime: resumeTime,
+      applyInitialSeek: !usingDash
+    });
   }
 
-  if (player && selectedOption && selectedOption.dataset.mode.startsWith("dash")) {
-    initializeDash(player, selectedOption, 0, true, initialPlaybackRate);
+  if (player && usingDash) {
+    initializeDash(player, selectedOption, resumeTime, true, initialPlaybackRate);
   }
 
   if (player) {
@@ -328,6 +340,7 @@ async function initializeDash(player, option, currentTime = 0, paused = true, pl
       height: Number(option.dataset.height || 0),
       label: option.dataset.label || ""
     };
+    const applyResume = createDashResumeHandler(player, currentTime);
 
     if (!dashPlayer || dashManifestUrl !== manifest) {
       destroyDash();
@@ -341,13 +354,24 @@ async function initializeDash(player, option, currentTime = 0, paused = true, pl
       });
       dashPlayer.initialize(player, manifest, !paused);
       dashPlayer.on(dashjs.MediaPlayer.events.STREAM_INITIALIZED, () => {
-        if (currentTime > 0) player.currentTime = currentTime;
         setPlayerPlaybackRate(player, normalizedPlaybackRate);
         applyDashQuality(requestedQuality);
+        applyResume();
       });
+
+      if (currentTime > 0) {
+        [
+          dashjs.MediaPlayer.events.PLAYBACK_METADATA_LOADED,
+          dashjs.MediaPlayer.events.CAN_PLAY,
+          dashjs.MediaPlayer.events.PLAYBACK_PLAYING
+        ].forEach((eventName) => {
+          dashPlayer.on(eventName, applyResume);
+        });
+      }
     } else {
       setPlayerPlaybackRate(player, normalizedPlaybackRate);
       applyDashQuality(requestedQuality);
+      applyResume();
       if (!paused) player.play().catch(() => {});
     }
 
@@ -366,6 +390,71 @@ async function initializeDash(player, option, currentTime = 0, paused = true, pl
       setPlayerPlaybackRate(player, normalizedPlaybackRate);
     }
   }
+}
+
+function createDashResumeHandler(player, currentTime) {
+  const resumeTime = normalizeResumeTime(currentTime);
+  if (!player || resumeTime <= 0) return () => {};
+
+  let resumeApplied = false;
+  let resumeAttempts = 0;
+  let resumeTimer = 0;
+
+  const stopResumeLoop = () => {
+    if (!resumeTimer) return;
+    window.clearTimeout(resumeTimer);
+    resumeTimer = 0;
+  };
+
+  const queueResumeAttempt = () => {
+    if (resumeApplied || resumeTimer || resumeAttempts >= 30 || !player.isConnected) return;
+    resumeTimer = window.setTimeout(() => {
+      resumeTimer = 0;
+      resumeAttempts += 1;
+      applyResume();
+    }, 250);
+  };
+
+  const applyResume = () => {
+    if (resumeApplied || !player.isConnected) {
+      stopResumeLoop();
+      return;
+    }
+
+    const duration = Number(player.duration || 0);
+    const safeTime = duration > 0 ? Math.min(resumeTime, Math.max(duration - 1, 0)) : resumeTime;
+    if (safeTime <= 0) {
+      resumeApplied = true;
+      stopResumeLoop();
+      return;
+    }
+
+    const beforeSeek = Number(player.currentTime || 0);
+
+    try {
+      dashPlayer?.seek(safeTime);
+    } catch {
+      // dash.js can reject seeks until the manifest and media timeline are ready.
+    }
+
+    try {
+      player.currentTime = safeTime;
+    } catch {
+      // Some browsers also reject the first media-element seek until metadata settles.
+    }
+
+    const afterSeek = Number(player.currentTime || 0);
+    resumeApplied = Math.abs(afterSeek - safeTime) < 1 || afterSeek >= Math.max(safeTime - 1, 1) || afterSeek > beforeSeek + 0.5;
+
+    if (resumeApplied) {
+      stopResumeLoop();
+      return;
+    }
+
+    queueResumeAttempt();
+  };
+
+  return applyResume;
 }
 
 function destroyDash() {
@@ -419,6 +508,116 @@ function setPlayerPlaybackRate(player, rate, control = document.getElementById("
   }
 
   return normalizedRate;
+}
+
+function normalizeResumeTime(value) {
+  const time = Number(value);
+  return Number.isFinite(time) && time > 0 ? time : 0;
+}
+
+function installAccountProgress({ player, video, noteElement, initialTime = 0, applyInitialSeek = true }) {
+  const account = getCurrentAccount();
+  if (!player || !account) {
+    if (noteElement) noteElement.textContent = "";
+    return;
+  }
+
+  const resumeTime = normalizeResumeTime(initialTime);
+  const thumbnail = assetUrl(pickThumbnail(video.videoThumbnails, 1280));
+  let lastSavedTime = resumeTime || Number.NEGATIVE_INFINITY;
+  let resumeApplied = resumeTime <= 0;
+  let resumeAttempts = 0;
+  let resumeTimer = 0;
+
+  if (noteElement) {
+    noteElement.textContent = resumeTime > 0
+      ? `Resuming for ${account.name} at ${secondsToDuration(resumeTime)}.`
+      : `Saving progress for ${account.name}.`;
+  }
+
+  const stopResumeLoop = () => {
+    if (!resumeTimer) return;
+    window.clearTimeout(resumeTimer);
+    resumeTimer = 0;
+  };
+
+  const queueResumeAttempt = () => {
+    if (resumeApplied || resumeTimer || resumeAttempts >= 40 || !player.isConnected) return;
+    resumeTimer = window.setTimeout(() => {
+      resumeTimer = 0;
+      applyResume();
+    }, 250);
+  };
+
+  const applyResume = () => {
+    if (!applyInitialSeek || resumeApplied || !player.isConnected) {
+      stopResumeLoop();
+      return;
+    }
+
+    const duration = Number(player.duration || 0);
+    const safeTime = duration > 0 ? Math.min(resumeTime, Math.max(duration - 1, 0)) : resumeTime;
+    if (safeTime <= 0) {
+      resumeApplied = true;
+      stopResumeLoop();
+      return;
+    }
+
+    const seekableEnd = player.seekable?.length ? Number(player.seekable.end(player.seekable.length - 1) || 0) : 0;
+    const beforeSeek = Number(player.currentTime || 0);
+    const canSeek = player.readyState >= 1 || duration > 0 || seekableEnd > 0;
+
+    if (canSeek) {
+      try {
+        player.currentTime = safeTime;
+      } catch {
+        // Some browsers reject the first seek until media metadata settles.
+      }
+    }
+
+    const afterSeek = Number(player.currentTime || 0);
+    resumeApplied = Math.abs(afterSeek - safeTime) < 1 || afterSeek >= Math.max(safeTime - 1, 1) || afterSeek > beforeSeek + 0.5;
+
+    if (resumeApplied) {
+      stopResumeLoop();
+      return;
+    }
+
+    resumeAttempts += 1;
+    queueResumeAttempt();
+  };
+
+  if (applyInitialSeek && resumeTime > 0) {
+    ["loadedmetadata", "loadeddata", "canplay", "play", "playing", "seeked"].forEach((eventName) => {
+      player.addEventListener(eventName, applyResume);
+    });
+    applyResume();
+    queueResumeAttempt();
+  }
+
+  const persistProgress = (force = false) => {
+    const currentTime = Number(player.currentTime || 0);
+    if (!Number.isFinite(currentTime)) return;
+    if (!force && currentTime < 3) return;
+    if (!force && Math.abs(currentTime - lastSavedTime) < 5) return;
+
+    lastSavedTime = currentTime;
+    saveVideoProgress({
+      videoId: video.videoId,
+      title: video.title,
+      author: video.author,
+      thumbnail,
+      currentTime,
+      duration: Number(player.duration || video.lengthSeconds || 0)
+    });
+  };
+
+  player.addEventListener("timeupdate", () => persistProgress(false));
+  player.addEventListener("pause", () => persistProgress(true));
+  player.addEventListener("ended", () => {
+    clearVideoProgress(video.videoId);
+    if (noteElement) noteElement.textContent = `Finished for ${account.name}.`;
+  });
 }
 
 async function loadComments(id) {

@@ -1,3 +1,4 @@
+import { renderAccount } from "./views/account.js";
 import { applyTheme } from "./config.js";
 import { installRouter, navigate, notFound, renderRoute, route } from "./router.js";
 import { renderChannel } from "./views/channel.js";
@@ -16,6 +17,7 @@ route("/feed/trending", (ctx) => renderFeed(ctx, "trending"));
 route("/feed/popular", (ctx) => renderFeed(ctx, "popular"));
 route("/search", renderSearch);
 route("/watch", renderWatch);
+route("/account", renderAccount);
 route("/channel/:ucid", renderChannel);
 route("/playlist", renderPlaylist);
 route("/settings", renderSettings);

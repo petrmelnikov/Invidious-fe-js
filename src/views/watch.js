@@ -1,6 +1,7 @@
 import { api, assetUrl } from "../api.js";
 import { errorState, list, loading } from "../components.js";
 import { getConfig } from "../config.js";
+import { installSponsorBlock } from "../sponsorblock.js";
 import { compactNumber, escapeHtml, fullNumber, pickThumbnail, relativeTime, setTitle } from "../utils.js";
 
 const view = () => document.getElementById("view");
@@ -10,6 +11,7 @@ let dashPlayer;
 let dashManifestUrl;
 
 export async function renderWatch({ search }) {
+  destroyDash();
   const id = search.get("v") || search.get("id");
   if (!id) {
     view().innerHTML = errorState(new Error("Missing video id"));
@@ -101,8 +103,11 @@ function watchMarkup(video) {
           `}
         </div>
 
+        ${dashAvailable || selected || video.hlsUrl ? playerEnhancements() : ""}
+
         ${dashAvailable || streams.length ? streamSelector(video, streams, selected, dashAvailable) : ""}
         <p class="player-note" id="player-note"></p>
+        <p class="player-note" id="sponsorblock-note"></p>
 
         <header class="watch-header">
           <h1>${escapeHtml(video.title)}</h1>
@@ -139,6 +144,15 @@ function watchMarkup(video) {
         ${list(related, { compact: true })}
       </aside>
     </section>
+  `;
+}
+
+function playerEnhancements() {
+  return `
+    <div class="player-enhancements">
+      <button class="sponsorblock-timeline" id="sponsorblock-timeline" type="button" aria-label="Seek video timeline" hidden></button>
+      <button class="button sponsorblock-skip" type="button" id="sponsorblock-skip" hidden>Skip segment</button>
+    </div>
   `;
 }
 
@@ -195,6 +209,16 @@ function installWatchInteractions(video) {
 
   if (player && selectedOption && selectedOption.dataset.mode.startsWith("dash")) {
     initializeDash(player, selectedOption);
+  }
+
+  if (player) {
+    installSponsorBlock({
+      player,
+      videoId: video.videoId,
+      noteElement: document.getElementById("sponsorblock-note"),
+      markerElement: document.getElementById("sponsorblock-timeline"),
+      skipButton: document.getElementById("sponsorblock-skip")
+    });
   }
 
   document.getElementById("stream-select")?.addEventListener("change", (event) => {

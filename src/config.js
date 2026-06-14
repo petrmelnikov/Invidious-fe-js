@@ -5,20 +5,69 @@ const defaults = {
   region: "",
   theme: "system",
   quality: "auto",
-  comments: "youtube"
+  comments: "youtube",
+  sponsorBlock: {
+    enabled: false,
+    apiOrigin: "https://sponsor.ajay.app",
+    showMarkers: true,
+    minSegmentLength: 1,
+    categories: {
+      sponsor: "auto",
+      selfpromo: "auto",
+      interaction: "button",
+      intro: "button",
+      outro: "button",
+      preview: "button",
+      hook: "no",
+      filler: "no"
+    }
+  }
 };
+
+function mergeSponsorBlock(saved = {}) {
+  return {
+    ...defaults.sponsorBlock,
+    ...saved,
+    categories: {
+      ...defaults.sponsorBlock.categories,
+      ...(saved.categories || {})
+    }
+  };
+}
+
+function mergeConfig(saved = {}) {
+  return {
+    ...defaults,
+    ...saved,
+    sponsorBlock: mergeSponsorBlock(saved.sponsorBlock)
+  };
+}
 
 export function getConfig() {
   try {
     const saved = JSON.parse(localStorage.getItem(CONFIG_KEY) || "{}");
-    return { ...defaults, ...saved };
+    return mergeConfig(saved);
   } catch {
-    return { ...defaults };
+    return mergeConfig();
   }
 }
 
 export function saveConfig(nextConfig) {
-  const config = { ...getConfig(), ...nextConfig };
+  const current = getConfig();
+  const config = mergeConfig({
+    ...current,
+    ...nextConfig,
+    sponsorBlock: nextConfig.sponsorBlock
+      ? {
+          ...current.sponsorBlock,
+          ...nextConfig.sponsorBlock,
+          categories: {
+            ...current.sponsorBlock.categories,
+            ...(nextConfig.sponsorBlock.categories || {})
+          }
+        }
+      : current.sponsorBlock
+  });
   localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
   applyTheme(config.theme);
   window.dispatchEvent(new CustomEvent("configchange", { detail: config }));

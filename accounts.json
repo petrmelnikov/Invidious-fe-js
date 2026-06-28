@@ -1,0 +1,11 @@
+{
+  "alice": {
+    "name": "alice",
+    "progress": {
+      "video123": {
+        "videoId": "video123",
+        "currentTime": 10
+      }
+    }
+  }
+}

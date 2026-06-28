@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { createReadStream, existsSync, statSync, readFileSync, writeFileSync } from "node:fs";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -45,6 +45,11 @@ const server = createServer((req, res) => {
 
   if (requestUrl.pathname === "/dash-manifest") {
     dashManifestRequest(req, res, requestUrl);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/custom-accounts") {
+    customAccountsRequest(req, res, requestUrl);
     return;
   }
 
@@ -183,6 +188,113 @@ async function dashManifestRequest(_req, res, requestUrl) {
   } catch (error) {
     res.writeHead(502, { "Content-Type": "text/plain; charset=utf-8" });
     res.end(error?.message || "DASH manifest request failed");
+  }
+}
+
+const ACCOUNTS_FILE = join(root, "accounts.json");
+
+function normalizeName(name) {
+  return String(name || "")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function accountKey(name) {
+  return normalizeName(name).toLowerCase();
+}
+
+function readAccountsDb() {
+  try {
+    if (existsSync(ACCOUNTS_FILE)) {
+      const content = readFileSync(ACCOUNTS_FILE, "utf8");
+      return JSON.parse(content || "{}");
+    }
+  } catch (err) {
+    console.error("Error reading accounts file:", err);
+  }
+  return {};
+}
+
+function writeAccountsDb(db) {
+  try {
+    writeFileSync(ACCOUNTS_FILE, JSON.stringify(db, null, 2), "utf8");
+  } catch (err) {
+    console.error("Error writing accounts file:", err);
+  }
+}
+
+async function customAccountsRequest(req, res, requestUrl) {
+  const name = requestUrl.searchParams.get("name");
+  if (!name) {
+    res.writeHead(400, {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Access-Control-Allow-Origin": "*"
+    });
+    res.end("Missing 'name' query parameter");
+    return;
+  }
+
+  const normalized = normalizeName(name);
+  const key = accountKey(normalized);
+
+  if (!key) {
+    res.writeHead(400, {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Access-Control-Allow-Origin": "*"
+    });
+    res.end("Invalid 'name' query parameter");
+    return;
+  }
+
+  if (req.method === "GET") {
+    const db = readAccountsDb();
+    const account = db[key] || { name: normalized, progress: {} };
+    res.writeHead(200, {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
+      "Access-Control-Allow-Origin": "*"
+    });
+    res.end(JSON.stringify(account));
+  } else if (req.method === "POST") {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk;
+    });
+    req.on("end", () => {
+      try {
+        const payload = JSON.parse(body || "{}");
+        const db = readAccountsDb();
+        db[key] = {
+          name: normalized,
+          progress: payload.progress || {}
+        };
+        writeAccountsDb(db);
+        res.writeHead(200, {
+          "Content-Type": "application/json; charset=utf-8",
+          "Access-Control-Allow-Origin": "*"
+        });
+        res.end(JSON.stringify({ success: true }));
+      } catch (err) {
+        res.writeHead(400, {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Access-Control-Allow-Origin": "*"
+        });
+        res.end("Invalid JSON body");
+      }
+    });
+  } else if (req.method === "OPTIONS") {
+    res.writeHead(204, {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type"
+    });
+    res.end();
+  } else {
+    res.writeHead(405, {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Access-Control-Allow-Origin": "*"
+    });
+    res.end("Method Not Allowed");
   }
 }
 

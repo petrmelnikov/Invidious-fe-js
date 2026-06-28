@@ -53,20 +53,79 @@ function normalizeAccount(account = {}, fallbackName = "") {
   return { name, progress };
 }
 
+let cachedAccount = null;
+
+export async function initAccount(name) {
+  const normalized = normalizeName(name);
+  const key = accountKey(normalized);
+  if (!key) {
+    cachedAccount = null;
+    return null;
+  }
+
+  try {
+    const response = await fetch(`/api/custom-accounts?name=${encodeURIComponent(normalized)}`);
+    if (response.ok) {
+      const data = await response.json();
+      if (data && typeof data === "object") {
+        cachedAccount = normalizeAccount(data, normalized);
+        writeJson(ACCOUNTS_KEY, { [key]: cachedAccount });
+        return cachedAccount;
+      }
+    }
+  } catch (err) {
+    console.warn("Failed to fetch account from backend, using local backup:", err);
+  }
+
+  const backup = readJson(ACCOUNTS_KEY, {});
+  if (backup[key]) {
+    cachedAccount = normalizeAccount(backup[key], normalized);
+  } else {
+    cachedAccount = { name: normalized, progress: {} };
+  }
+  return cachedAccount;
+}
+
 function loadAccounts() {
-  const accounts = readJson(ACCOUNTS_KEY, {});
-  return Object.fromEntries(
-    Object.entries(accounts)
-      .filter(([key]) => typeof key === "string" && key)
-      .map(([key, account]) => [key, normalizeAccount(account, key)])
-  );
+  if (cachedAccount) {
+    const key = accountKey(cachedAccount.name);
+    return { [key]: cachedAccount };
+  }
+
+  const key = getCurrentAccountKey();
+  if (key) {
+    const backup = readJson(ACCOUNTS_KEY, {});
+    if (backup[key]) {
+      cachedAccount = normalizeAccount(backup[key], key);
+      return { [key]: cachedAccount };
+    }
+  }
+
+  return {};
 }
 
 function saveAccounts(accounts) {
-  writeJson(ACCOUNTS_KEY, accounts);
+  const key = getCurrentAccountKey();
+  if (!key) return;
+
+  const account = accounts[key];
+  if (!account) return;
+
+  cachedAccount = account;
+  writeJson(ACCOUNTS_KEY, { [key]: cachedAccount });
+
+  fetch(`/api/custom-accounts?name=${encodeURIComponent(account.name)}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ progress: account.progress })
+  }).catch((err) => {
+    console.error("Failed to save accounts to backend:", err);
+  });
 }
 
-function getCurrentAccountKey() {
+export function getCurrentAccountKey() {
   return accountKey(localStorage.getItem(CURRENT_ACCOUNT_KEY) || "");
 }
 
@@ -96,21 +155,19 @@ export function getCurrentAccount() {
   };
 }
 
-export function signIn(name) {
+export async function signIn(name) {
   const normalizedName = normalizeName(name);
   const key = accountKey(normalizedName);
   if (!key) return null;
 
-  const accounts = loadAccounts();
-  const existing = accounts[key];
-  accounts[key] = normalizeAccount(existing || { name: normalizedName }, normalizedName);
-  saveAccounts(accounts);
   localStorage.setItem(CURRENT_ACCOUNT_KEY, key);
+  await initAccount(normalizedName);
   return dispatchAccountChange();
 }
 
 export function signOut() {
   localStorage.removeItem(CURRENT_ACCOUNT_KEY);
+  cachedAccount = null;
   return dispatchAccountChange();
 }
 

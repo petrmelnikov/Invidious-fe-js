@@ -9,30 +9,38 @@ import { renderSearch } from "./views/search.js";
 import { renderSettings } from "./views/settings.js";
 import { renderStaticPage } from "./views/static.js";
 import { renderWatch } from "./views/watch.js";
+import { initAccount, getCurrentAccountKey } from "./account.js";
 
-applyTheme();
+(async () => {
+  applyTheme();
 
-route("/", renderHome);
-route("/feed/trending", (ctx) => renderFeed(ctx, "trending"));
-route("/feed/popular", (ctx) => renderFeed(ctx, "popular"));
-route("/search", renderSearch);
-route("/watch", renderWatch);
-route("/account", renderAccount);
-route("/channel/:ucid", renderChannel);
-route("/playlist", renderPlaylist);
-route("/settings", renderSettings);
-route("/privacy", (ctx) => renderStaticPage(ctx, "privacy"));
-route("/licenses", (ctx) => renderStaticPage(ctx, "licenses"));
-notFound(renderHome);
+  const activeKey = getCurrentAccountKey();
+  if (activeKey) {
+    await initAccount(activeKey);
+  }
 
-installRouter();
+  route("/", renderHome);
+  route("/feed/trending", (ctx) => renderFeed(ctx, "trending"));
+  route("/feed/popular", (ctx) => renderFeed(ctx, "popular"));
+  route("/search", renderSearch);
+  route("/watch", renderWatch);
+  route("/account", renderAccount);
+  route("/channel/:ucid", renderChannel);
+  route("/playlist", renderPlaylist);
+  route("/settings", renderSettings);
+  route("/privacy", (ctx) => renderStaticPage(ctx, "privacy"));
+  route("/licenses", (ctx) => renderStaticPage(ctx, "licenses"));
+  notFound(renderHome);
 
-document.getElementById("global-search").addEventListener("submit", (event) => {
-  event.preventDefault();
-  const q = new FormData(event.currentTarget).get("q")?.toString().trim();
-  if (q) navigate(`/search?q=${encodeURIComponent(q)}`);
-});
+  installRouter();
 
-window.addEventListener("configchange", () => renderRoute());
+  document.getElementById("global-search").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const q = new FormData(event.currentTarget).get("q")?.toString().trim();
+    if (q) navigate(`/search?q=${encodeURIComponent(q)}`);
+  });
 
-renderRoute();
+  window.addEventListener("configchange", () => renderRoute());
+
+  renderRoute();
+})();

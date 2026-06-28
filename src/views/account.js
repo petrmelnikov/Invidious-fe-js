@@ -56,10 +56,10 @@ export function renderAccount() {
     ` : ""}
   `;
 
-  document.getElementById("account-form")?.addEventListener("submit", (event) => {
+  document.getElementById("account-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const name = new FormData(event.currentTarget).get("name");
-    if (!signIn(name)) return;
+    if (!(await signIn(name))) return;
     renderAccount();
   });
 

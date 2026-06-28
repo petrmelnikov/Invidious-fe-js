@@ -10,10 +10,11 @@ services:
       INVIDIOUS_API_ORIGIN: ${INVIDIOUS_API_ORIGIN:-http://localhost:3000}
       INVIDIOUS_REGION: ${INVIDIOUS_REGION:-}
       SPONSORBLOCK_API_ORIGIN: ${SPONSORBLOCK_API_ORIGIN:-https://sponsor.ajay.app}
+      ACCOUNTS_FILE: /app/data/accounts.json
     ports:
       - "${INVIDIOUS_FE_PORT:-5173}:${PORT:-5173}"
     volumes:
-      - ./accounts.json:/app/accounts.json
+      - ./data:/app/data
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:$${PORT:-5173}/ >/dev/null || exit 1"]
       interval: 30s

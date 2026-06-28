@@ -191,7 +191,7 @@ async function dashManifestRequest(_req, res, requestUrl) {
   }
 }
 
-const ACCOUNTS_FILE = join(root, "accounts.json");
+const ACCOUNTS_FILE = process.env.ACCOUNTS_FILE || join(root, "accounts.json");
 
 function normalizeName(name) {
   return String(name || "")

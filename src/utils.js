@@ -61,6 +61,25 @@ export function parseQuery(search = window.location.search) {
   return Object.fromEntries(new URLSearchParams(search));
 }
 
+export function parseYoutubeTime(t) {
+  if (!t) return 0;
+
+  if (/^\d+$/.test(t)) {
+    return parseInt(t, 10);
+  }
+
+  const match = t.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/);
+  if (match && (match[1] !== undefined || match[2] !== undefined || match[3] !== undefined)) {
+    const hours = parseInt(match[1] || "0", 10);
+    const minutes = parseInt(match[2] || "0", 10);
+    const seconds = parseInt(match[3] || "0", 10);
+    return hours * 3600 + minutes * 60 + seconds;
+  }
+
+  return 0;
+}
+
+
 export function setTitle(title) {
   document.title = title ? `${title} - Invidious FE` : "Invidious FE";
 }

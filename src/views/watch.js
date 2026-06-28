@@ -3,7 +3,7 @@ import { api, assetUrl } from "../api.js";
 import { errorState, list, loading } from "../components.js";
 import { getConfig, saveConfig } from "../config.js";
 import { installSponsorBlock } from "../sponsorblock.js";
-import { compactNumber, escapeHtml, fullNumber, pickThumbnail, relativeTime, secondsToDuration, setTitle } from "../utils.js";
+import { compactNumber, escapeHtml, fullNumber, parseYoutubeTime, pickThumbnail, relativeTime, secondsToDuration, setTitle } from "../utils.js";
 
 const view = () => document.getElementById("view");
 const DASH_JS_URL = "https://cdn.jsdelivr.net/npm/dashjs@4.7.4/dist/dash.all.min.js";
@@ -30,7 +30,7 @@ export async function renderWatch({ search }) {
     const video = await api.video(id);
     setTitle(video.title);
     view().innerHTML = watchMarkup(video, id);
-    installWatchInteractions(video);
+    installWatchInteractions(video, search);
     loadComments(id);
   } catch (error) {
     view().innerHTML = errorState(error);
@@ -234,13 +234,39 @@ function captionTracks(video) {
   });
 }
 
-function installWatchInteractions(video) {
+function installWatchInteractions(video, search) {
   const player = document.getElementById("video-player");
   const selector = document.getElementById("stream-select");
   const speedControl = document.getElementById("speed-select");
   const initialPlaybackRate = normalizePlaybackRate(speedControl?.value || getConfig().playbackSpeed);
   const savedProgress = getVideoProgress(video.videoId);
-  const resumeTime = normalizeResumeTime(savedProgress?.currentTime);
+
+  let resumeTime = normalizeResumeTime(savedProgress?.currentTime);
+  const tParam = search.get("t") || new URLSearchParams(window.location.hash.replace(/^#/, "")).get("t");
+  if (tParam) {
+    const parsedTime = parseYoutubeTime(tParam);
+    resumeTime = parsedTime;
+
+    // Remove the 't' parameter from URL query and hash
+    const url = new URL(window.location.href);
+    let urlChanged = false;
+    if (url.searchParams.has("t")) {
+      url.searchParams.delete("t");
+      urlChanged = true;
+    }
+    if (url.hash) {
+      const hashParams = new URLSearchParams(url.hash.replace(/^#/, ""));
+      if (hashParams.has("t")) {
+        hashParams.delete("t");
+        const newHash = hashParams.toString();
+        url.hash = newHash ? `#${newHash}` : "";
+        urlChanged = true;
+      }
+    }
+    if (urlChanged) {
+      window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+    }
+  }
 
   const selectedOption = selector?.selectedOptions[0];
   const usingDash = Boolean(selectedOption?.dataset.mode?.startsWith("dash"));
